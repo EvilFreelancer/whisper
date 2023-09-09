@@ -263,6 +263,37 @@ class Whisper(nn.Module):
     ) -> Dict[str, torch.Tensor]:
         return self.decoder(tokens, self.encoder(mel))
 
+    def quantize_model(self, n_bits: int = 8):
+        """
+        Quantize the model weights in place.
+
+        Parameters:
+        - n_bits: Number of bits for quantization (4 or 8).
+        """
+        assert n_bits in [4, 8], "Only 4 or 8 bits quantization is supported"
+        self.quantized_layers = []  # Store layers which are quantized
+
+        for name, module in self.named_modules():
+            if isinstance(module, (nn.Linear, nn.Conv1d)):
+                q_module = bnb.nn.QuantConv(
+                    module,
+                    n_bits=n_bits,
+                    optim=torch.optim.SGD,  # or your preferred optimizer
+                    optim_params={'lr': 0.1},
+                    stats=None,
+                    momentum=0.9,
+                    update_step=100
+                )
+                self.quantized_layers.append(q_module)
+                setattr(self, name, q_module)
+
+    def dequantize_model(self):
+        """
+        Convert the model back to full precision.
+        """
+        for layer in self.quantized_layers:
+            layer.dequantize()
+
     @property
     def device(self):
         return next(self.parameters()).device
